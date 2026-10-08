@@ -251,7 +251,7 @@ textarea{width:100%;min-height:80px;margin-top:8px;font:13px var(--font-code);ba
   const RELAY="https://ntfy.sh/";
   let linkTopic=null;try{linkTopic=localStorage.getItem("assetScanner.link");}catch(e){}
   let sending=false,retryT=null;
-  function linkUI(){const c=$("linkChip");c.textContent=linkTopic?"Linked to laptop":"Not linked to laptop";c.className="chip"+(linkTopic?" on":"");$("linkBtn").textContent=linkTopic?"Unlink":"Link laptop";}
+  function linkUI(){const c=$("linkChip");c.textContent=linkTopic?"Linked · "+linkTopic.replace("kasasset-","").slice(0,5).toUpperCase():"Not linked to laptop";c.className="chip"+(linkTopic?" on":"");$("linkBtn").textContent=linkTopic?"Unlink":"Link laptop";}
   function setLink(t){
     t=String(t||"").trim();if(!/^kasasset-[a-z0-9]{10,}$/.test(t))return;
     if(t===linkTopic)return;
@@ -269,7 +269,7 @@ textarea{width:100%;min-height:80px;margin-top:8px;font:13px var(--font-code);ba
         if(!r.ok)throw new Error("HTTP "+r.status);
         s.sent=true;save();render();
       }
-      $("linkChip").textContent="Linked to laptop";
+      linkUI();
     }catch(e){$("linkChip").textContent="Link offline – retrying";retryT=setTimeout(sendPending,5000);}
     finally{sending=false;}
   }
