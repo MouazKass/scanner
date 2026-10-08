@@ -172,7 +172,12 @@ textarea{width:100%;min-height:80px;margin-top:8px;font:13px var(--font-code);ba
   function addCode(raw,how){
     const code=String(raw||"").replace(/\*/g,"").trim().toUpperCase();
     if(!code)return;
-    if(scans.some(s=>s.code===code)){show("warn","Already scanned",code,"It's already in the list.");feedback(false);return;}
+    const i=scans.findIndex(s=>s.code===code);
+    if(i>=0){
+      if(!linkTopic){show("warn","Already scanned",code,"It's already in the list.");feedback(false);return;}
+      scans.splice(i,1);scans.push({code,at:new Date().toISOString(),sent:false});save();render();sendPending();
+      show("ok","Scanned again",code,"Asking the laptop…");feedback(true);return;
+    }
     scans.push({code,at:new Date().toISOString(),sent:false});save();render();sendPending();
     show("ok",how==="manual"?"Added":"Scanned",code,"Added to the list.");feedback(true);
   }
@@ -319,7 +324,7 @@ textarea{width:100%;min-height:80px;margin-top:8px;font:13px var(--font-code);ba
           if(body.id===id){showResults(q,body);return;}}
       }catch(e){}
     }
-    resMsg("No answer from the laptop. Make sure the label page is open there with the tracker loaded.");
+    resMsg("No answer from the laptop. Check the label page is open there with the tracker loaded, and that it is the latest version of Asset_Label_Printer.html.");
   }
   function showResults(q,body){
     const r=$("results");r.hidden=false;r.innerHTML="";
