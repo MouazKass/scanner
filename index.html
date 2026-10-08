@@ -69,7 +69,15 @@ li:last-child{border-bottom:0}
 .linkpanel{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px;margin:0 0 10px;font-size:14px}
 .linkpanel p{margin:0 0 8px;color:var(--muted)}
 .linkpanel .manual{margin-top:0}
-.s{font-size:12px;color:var(--muted)}.s.ok{color:var(--ok)}
+.s{font-size:12px;color:var(--muted);text-align:right;max-width:120px}.s.ok{color:var(--ok)}.s.warn{color:var(--warn)}
+#results{margin-top:10px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:6px 12px}
+.res-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid var(--line)}
+.res-row:last-child{border-bottom:0}
+.res-row .info{flex:1;min-width:160px}
+.res-row .a{font:700 17px var(--font-code)}
+.res-row .d{font-size:12px;color:var(--muted)}
+.res-row .btn{padding:8px 12px;font-size:14px}
+.res-msg{font-size:13px;color:var(--muted);padding:8px 0}
 .toast{font-size:13px;color:var(--muted);min-height:18px;margin:6px 0 0}
 textarea{width:100%;min-height:80px;margin-top:8px;font:13px var(--font-code);background:var(--surface);color:var(--fg);border:1px solid var(--line);border-radius:10px;padding:8px}
 </style>
@@ -101,6 +109,11 @@ textarea{width:100%;min-height:80px;margin-top:8px;font:13px var(--font-code);ba
     <input id="manual" type="text" placeholder="Or type asset no. / serial" aria-label="Type an asset number or serial" spellcheck="false">
     <button class="btn" type="submit">Add</button>
   </form>
+  <form class="manual" id="searchForm" autocomplete="off">
+    <input id="search" type="text" inputmode="text" placeholder="Search last 5 digits" aria-label="Search by the last digits of the asset no., reference or serial" spellcheck="false">
+    <button class="btn" type="submit">Search</button>
+  </form>
+  <div id="results" hidden></div>
 
   <div class="listwrap"><ol id="list"></ol></div>
   <div class="confirm" id="confirm" hidden>
@@ -137,7 +150,9 @@ textarea{width:100%;min-height:80px;margin-top:8px;font:13px var(--font-code);ba
       const t=document.createElement("span");t.className="t";t.textContent=new Date(s.at).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
       const x=document.createElement("button");x.className="x";x.type="button";x.textContent="×";x.setAttribute("aria-label","Remove "+s.code);
       x.onclick=()=>{scans=scans.filter(z=>z!==s);save();render();};
-      const st=document.createElement("span");st.className="s"+(s.sent?" ok":"");st.textContent=linkTopic?(s.sent?"✓ sent":"waiting"):"";
+      const st=document.createElement("span");
+      if(s.res){st.className="s "+(s.resKind==="warn"?"warn":"ok");st.textContent=s.res;}
+      else{st.className="s"+(s.sent?" ok":"");st.textContent=linkTopic?(s.sent?"✓ sent":"waiting"):"";}
       li.append(n,c,t,st,x);ol.appendChild(li);
     });
   }
@@ -283,6 +298,75 @@ textarea{width:100%;min-height:80px;margin-top:8px;font:13px var(--font-code);ba
     setLink("kasasset-"+v);$("linkCode").value="";};
   window.addEventListener("online",sendPending);
   linkUI();sendPending();
+  /* ---------- search the laptop's tracker by last digits (asks the linked laptop, which replies) ---------- */
+  function resMsg(t){const r=$("results");r.hidden=false;r.innerHTML="";const d=document.createElement("div");d.className="res-msg";d.textContent=t;r.appendChild(d);}
+  async function post(body){const r=await fetch(RELAY+linkTopic,{method:"POST",body});if(!r.ok)throw new Error(r.status);}
+  async function runSearch(q){
+    q=String(q||"").replace(/[\s*]/g,"").toUpperCase();
+    if(q.length<3){resMsg("Type at least 3 characters, e.g. the last 5 digits.");return;}
+    if(!linkTopic){resMsg("Link the laptop first: the tracker lives there. Tap Link laptop above.");return;}
+    const id=Math.random().toString(36).slice(2,10),since=Math.floor(Date.now()/1000)-2;
+    resMsg("Searching the tracker on the laptop…");
+    try{await post("?Q:"+id+":"+q);}catch(e){resMsg("Couldn't reach the laptop link. Check your connection and try again.");return;}
+    const until=Date.now()+15000;
+    while(Date.now()<until){
+      await new Promise(r=>setTimeout(r,1500));
+      try{
+        const r=await fetch(`${RELAY}${linkTopic}-r/json?poll=1&since=${since}`,{cache:"no-store"});if(!r.ok)continue;
+        const lines=(await r.text()).split("\n").filter(Boolean);
+        for(const line of lines){let m;try{m=JSON.parse(line);}catch(e){continue;}if(m.event!=="message")continue;
+          let body;try{body=JSON.parse(m.message);}catch(e){continue;}
+          if(body.id===id){showResults(q,body);return;}}
+      }catch(e){}
+    }
+    resMsg("No answer from the laptop. Make sure the label page is open there with the tracker loaded.");
+  }
+  function showResults(q,body){
+    const r=$("results");r.hidden=false;r.innerHTML="";
+    if(body.error){resMsg(body.error);return;}
+    if(!body.matches||!body.matches.length){resMsg("Nothing in the tracker ends in "+q+".");return;}
+    body.matches.forEach(m=>{
+      const row=document.createElement("div");row.className="res-row";
+      const info=document.createElement("div");info.className="info";
+      const a=document.createElement("div");a.className="a";a.textContent=m.asset;
+      const d=document.createElement("div");d.className="d";d.textContent=[m.ref&&"Ref "+m.ref,m.serial&&"S/N "+m.serial,m.group,m.location,m.status].filter(Boolean).join(" · ");
+      info.append(a,d);
+      const pb=document.createElement("button");pb.className="btn primary";pb.type="button";pb.textContent="Print";
+      const vb=document.createElement("button");vb.className="btn";vb.type="button";vb.textContent="Verify";
+      const act=async(cmd,btn,done)=>{btn.disabled=true;try{await post(cmd+m.asset);btn.textContent=done;feedback(true);}catch(e){btn.disabled=false;toast("Couldn't send. Try again.");}};
+      pb.onclick=()=>act("!P:",pb,"Sent…");vb.onclick=()=>act("!V:",vb,"Sent…");
+      row.append(info,pb,vb);r.appendChild(row);
+    });
+    if(body.more)resMsg("Showing the first "+body.matches.length+". Type more digits to narrow it down.");
+  }
+  $("searchForm").onsubmit=e=>{e.preventDefault();runSearch($("search").value);};
+  /* ---------- results back from the laptop: verified / sent to printer / not found ---------- */
+  let replySince=Math.floor(Date.now()/1000)-5,replyT=null,seenReplies=new Set();
+  function applyResult(b){
+    const label=b.result+(b.asset&&b.asset!==b.code?" · "+b.asset:"");
+    if(b.code&&!/^[!?]/.test(b.code)){
+      const item=[...scans].reverse().find(x=>x.code===String(b.code).toUpperCase());
+      if(item){item.res=b.result;item.resKind=b.kind;save();render();}
+    }
+    show(b.kind==="warn"?"warn":"ok","Laptop: "+b.result,b.asset||b.code||"",b.detail||"");
+    feedback(b.kind!=="warn");
+    document.querySelectorAll(".res-row").forEach(row=>{const a=row.querySelector(".a");if(a&&b.asset&&a.textContent===b.asset){const d=row.querySelector(".d");if(d)d.textContent=b.result+(b.status?" · now "+b.status:"");}});
+  }
+  async function pollReplies(){
+    clearTimeout(replyT);
+    if(linkTopic&&!document.hidden){
+      try{
+        const r=await fetch(`${RELAY}${linkTopic}-r/json?poll=1&since=${replySince}`,{cache:"no-store"});
+        if(r.ok){(await r.text()).split("\n").filter(Boolean).forEach(line=>{let m;try{m=JSON.parse(line);}catch(e){return;}
+          if(m.event!=="message"||seenReplies.has(m.id))return;seenReplies.add(m.id);replySince=Math.max(replySince,m.time||0);
+          let b;try{b=JSON.parse(m.message);}catch(e){return;}if(b&&b.type==="result")applyResult(b);});}
+      }catch(e){}
+    }
+    replyT=setTimeout(pollReplies,3000);
+  }
+  pollReplies();
+
+
   render();
   if("serviceWorker" in navigator&&window.isSecureContext){navigator.serviceWorker.register("sw.js").catch(()=>{});}
 })();

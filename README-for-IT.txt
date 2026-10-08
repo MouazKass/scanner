@@ -41,3 +41,16 @@ Live link to the laptop (added)
   - If ntfy.sh is blocked or not approved, IT can self-host ntfy (open source)
     and change the RELAY constant at the top of the link section in both
     index.html (phone app) and Asset_Label_Printer.html (laptop page).
+
+Search from the phone (added)
+  The phone can search the tracker by the last digits of an asset number,
+  reference or serial. The query goes to the laptop over the same relay; the
+  laptop replies on "<link code>-r" with up to 8 matches (asset no., reference,
+  serial, device type, location, status; no names). Print / Verify taps are
+  sent back to the laptop as commands.
+
+Result feedback on the phone (added)
+  After each scan or Print / Verify tap, the laptop replies with the outcome
+  (Label sent to printer, Reprinted, Verified, Already verified, Not in
+  tracker, Tracker not open on the laptop). The phone shows it as
+  "Laptop: <result>" and next to the item in its list.
