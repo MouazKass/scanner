@@ -219,8 +219,11 @@ textarea{width:100%;min-height:80px;margin-top:8px;font:13px var(--font-code);ba
     }
     setTimeout(loop,120);
   }
-  function stop(){running=false;if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}}
-  async function start(){
+  /* keep the screen on while scanning so iOS doesn't sleep and drop the link */
+  let wake=null;
+  async function keepAwake(){try{if(navigator.wakeLock&&!wake){wake=await navigator.wakeLock.request("screen");wake.addEventListener("release",()=>{wake=null;});}}catch(e){}}
+  function stop(){running=false;try{if(wake){wake.release();wake=null;}}catch(e){}if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}}
+  async function start(){keepAwake();
     if(!window.isSecureContext){$("startMsg").textContent="The camera needs this app to be opened over https://. Ask IT to serve it over HTTPS.";return;}
     if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){$("startMsg").textContent="This browser can't use the camera. Open the app in Safari or Chrome.";return;}
     if(!window.ZXing){$("startMsg").textContent="The scanner engine didn't load. Reload the app.";return;}
@@ -286,7 +289,9 @@ textarea{width:100%;min-height:80px;margin-top:8px;font:13px var(--font-code);ba
       for(const s of scans){
         if(s.sent)continue;
         const r=await fetch(RELAY+linkTopic,{method:"POST",body:s.code});
+        if(r.status===429){$("linkChip").textContent="Relay daily limit reached – use Send/Copy";sending=false;retryT=setTimeout(sendPending,60000);return;}
         if(!r.ok)throw new Error("HTTP "+r.status);
+        awaitReply();
         s.sent=true;save();render();
       }
       linkUI();
@@ -302,10 +307,13 @@ textarea{width:100%;min-height:80px;margin-top:8px;font:13px var(--font-code);ba
     if(v.length<10){$("linkMsg").textContent="That code looks too short. Check it on the laptop.";return;}
     setLink("kasasset-"+v);$("linkCode").value="";};
   window.addEventListener("online",sendPending);
+  /* coming back to the app (unlock, switch back): resend anything waiting and check for replies straight away */
+  document.addEventListener("visibilitychange",()=>{if(!document.hidden&&linkTopic){sendPending();awaitReply();}});
+  window.addEventListener("pageshow",()=>{if(linkTopic){sendPending();awaitReply();}});
   linkUI();sendPending();
   /* ---------- search the laptop's tracker by last digits (asks the linked laptop, which replies) ---------- */
   function resMsg(t){const r=$("results");r.hidden=false;r.innerHTML="";const d=document.createElement("div");d.className="res-msg";d.textContent=t;r.appendChild(d);}
-  async function post(body){const r=await fetch(RELAY+linkTopic,{method:"POST",body});if(!r.ok)throw new Error(r.status);}
+  async function post(body){const r=await fetch(RELAY+linkTopic,{method:"POST",body});if(!r.ok)throw new Error(r.status);awaitReply();}
   async function runSearch(q){
     q=String(q||"").replace(/[\s*]/g,"").toUpperCase();
     if(q.length<3){resMsg("Type at least 3 characters, e.g. the last 5 digits.");return;}
@@ -357,6 +365,9 @@ textarea{width:100%;min-height:80px;margin-top:8px;font:13px var(--font-code);ba
     feedback(b.kind!=="warn");
     document.querySelectorAll(".res-row").forEach(row=>{const a=row.querySelector(".a");if(a&&b.asset&&a.textContent===b.asset){const d=row.querySelector(".d");if(d)d.textContent=b.result+(b.status?" · now "+b.status:"");}});
   }
+  /* poll quickly only while a reply is expected, to stay well inside the relay's free limits */
+  let replyWait=0;
+  function awaitReply(){replyWait=Date.now()+25000;clearTimeout(replyT);replyT=setTimeout(pollReplies,2000);}
   async function pollReplies(){
     clearTimeout(replyT);
     if(linkTopic&&!document.hidden){
@@ -367,7 +378,7 @@ textarea{width:100%;min-height:80px;margin-top:8px;font:13px var(--font-code);ba
           let b;try{b=JSON.parse(m.message);}catch(e){return;}if(b&&b.type==="result")applyResult(b);});}
       }catch(e){}
     }
-    replyT=setTimeout(pollReplies,3000);
+    replyT=setTimeout(pollReplies,Date.now()<replyWait?3000:30000);
   }
   pollReplies();
 
